@@ -1,0 +1,15 @@
+__pycache__/
+temp/
+realtime-brat-generator/
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.mov
+*.webm
+*.ogg
+*.flac
+*.png
+*.jpg
+*.jpeg
+.DS_Store

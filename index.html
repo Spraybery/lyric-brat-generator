@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brat Lyric Video Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body, html {
+            min-height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        #app {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            padding: clamp(16px, 4vw, 40px) clamp(12px, 3vw, 20px);
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        h1 { font-size: clamp(17px, 2.5vw, 22px); font-weight: 700; letter-spacing: -0.5px; }
+
+        /* ── Upload section ── */
+        #upload-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+        }
+
+        #drop-zone {
+            width: 100%;
+            border: 2px dashed #444;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            color: #aaa;
+        }
+
+        #drop-zone.dragover {
+            border-color: #8ace00;
+            background: rgba(138,206,0,0.07);
+            color: #fff;
+        }
+
+        #drop-zone p  { font-size: 15px; margin-bottom: 8px; }
+        #drop-zone span { font-size: 12px; opacity: 0.6; }
+        #file-input { display: none; }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        select {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: white;
+            font-size: 14px;
+        }
+
+        button {
+            background-color: #8ace00;
+            color: black;
+            border: none;
+            padding: 10px 22px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        button:hover  { opacity: 0.9; }
+        button:active { transform: scale(0.96); }
+        button:disabled { opacity: 0.4; cursor: default; }
+
+        /* ── Loading ── */
+        #loading-section {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .spinner {
+            width: 42px; height: 42px;
+            border: 4px solid #333;
+            border-top-color: #8ace00;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading-section p { color: #aaa; font-size: 14px; }
+
+        /* ── Player section ── */
+        #player-section {
+            display: none;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 40px;
+            width: 100%;
+        }
+
+        #preview-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            position: sticky;
+            top: 20px;
+            min-width: 0;
+        }
+
+        #canvas-controls {
+            flex: 1;
+            width: 100%;
+            min-width: 0;
+        }
+
+        /* Hidden video — audio-only playback */
+        #media-player { display: none; }
+
+        /* Styled audio bar */
+        #audio-bar {
+            width: 100%;
+            max-width: 460px;
+        }
+
+        audio {
+            width: 100%;
+            border-radius: 8px;
+            accent-color: #8ace00;
+        }
+
+        /* ── Brat canvas ── */
+        #brat-canvas {
+            width: min(400px, 100%);
+            aspect-ratio: 3 / 4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #ffffff;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        #text-content {
+            color: #000000;
+            font-weight: bold;
+            font-family: 'Arial Narrow', 'arialnarrow', Arial, sans-serif;
+            font-size: 32px;
+            line-height: 1.2;
+            text-align: center;
+            filter: blur(1px) contrast(1.25);
+            white-space: pre-wrap;
+            padding: 24px;
+            word-break: break-word;
+            min-height: 1em;
+            transition: font-size 0.15s;
+        }
+
+        /* ── Controls panel ── */
+        #canvas-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+        }
+
+        /* top row: presets + action buttons */
+        .ctrl-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* preset swatches */
+        .preset-btn {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: border-color 0.2s, transform 0.1s;
+            padding: 0;
+            flex-shrink: 0;
+        }
+        .preset-btn:hover  { transform: scale(1.15); }
+        .preset-btn.active { border-color: #fff; }
+
+        /* swatch grid */
+        #swatch-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        /* custom colour pickers */
+        #custom-colors {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .color-picker-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        input[type=color] {
+            width: 44px; height: 36px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            padding: 2px;
+            background: #2a2a2a;
+        }
+
+        /* pill rows for alignment / transform */
+        .pill-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .opt-pill {
+            padding: 5px 13px;
+            border-radius: 20px;
+            border: 2px solid #444;
+            background: #2a2a2a;
+            color: #aaa;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+        }
+
+        .opt-pill.active {
+            border-color: #8ace00;
+            color: #8ace00;
+            background: rgba(138,206,0,0.1);
+        }
+
+        /* section divider labels */
+        .ctrl-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #555;
+            text-transform: uppercase;
+            width: 100%;
+            text-align: left;
+            padding-left: 2px;
+            margin-top: 4px;
+        }
+
+        #restart-btn { background: #333; color: #fff; }
+
+        /* ── Slider row ── */
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .slider-row label {
+            font-size: 13px;
+            color: #aaa;
+            width: 90px;
+            flex-shrink: 0;
+        }
+
+        input[type=range] {
+            flex: 1;
+            accent-color: #8ace00;
+            cursor: pointer;
+        }
+
+        .slider-val {
+            font-size: 13px;
+            color: #fff;
+            width: 38px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        /* blur toggle */
+        #blur-toggle {
+            padding: 6px 16px;
+            font-size: 13px;
+        }
+
+        #blur-toggle.off {
+            background: #333;
+            color: #aaa;
+        }
+
+        /* ── Animation mode pills ── */
+        #anim-picker {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .anim-pill, .ratio-pill {
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 2px solid #444;
+            background: #2a2a2a;
+            color: #aaa;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+        }
+
+        .anim-pill.active, .ratio-pill.active {
+            border-color: #8ace00;
+            color: #8ace00;
+            background: rgba(138,206,0,0.1);
+        }
+
+        /* word-pop span transitions */
+        #text-content .word {
+            display: inline-block;
+            opacity: 0;
+            transform: scale(0.6);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+
+        #text-content .word.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* fade mode */
+        #text-content.fade-in {
+            animation: fadeInLine 0.35s ease forwards;
+        }
+
+        @keyframes fadeInLine {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0);   }
+        }
+
+        /* ── Emotion presets ── */
+        #emotion-picker {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .emotion-btn {
+            padding: 7px 14px;
+            border-radius: 20px;
+            border: 2px solid #444;
+            background: #2a2a2a;
+            color: #aaa;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s, background 0.15s, transform 0.1s;
+        }
+
+        .emotion-btn:hover  { transform: scale(1.06); }
+        .emotion-btn.active { border-color: #fff; color: #fff; }
+
+        /* ── Per-line trigger effects on #brat-canvas ── */
+
+        /* Shake */
+        @keyframes shake {
+            0%,100% { transform: translate(0,0) rotate(0deg); }
+            15%     { transform: translate(-5px, 2px) rotate(-1deg); }
+            30%     { transform: translate(5px, -2px) rotate(1deg); }
+            45%     { transform: translate(-4px, 3px) rotate(-0.5deg); }
+            60%     { transform: translate(4px, -1px) rotate(0.5deg); }
+            75%     { transform: translate(-2px, 2px) rotate(0deg); }
+        }
+        #brat-canvas.shake { animation: shake 0.45s ease both; }
+
+        /* Flash (bg briefly lightens) */
+        @keyframes bgflash {
+            0%,100% { filter: brightness(1); }
+            30%     { filter: brightness(1.5); }
+        }
+        #brat-canvas.flash { animation: bgflash 0.3s ease both; }
+
+        /* Bounce-in text */
+        @keyframes bounceIn {
+            0%   { transform: scale(0.5); opacity: 0; }
+            60%  { transform: scale(1.15); opacity: 1; }
+            80%  { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        #text-content.bounce { animation: bounceIn 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+        /* Glitch burst */
+        @keyframes glitch {
+            0%,100% { clip-path: none; transform: skewX(0); }
+            10%     { clip-path: inset(10% 0 80% 0); transform: skewX(-6deg) translateX(4px); }
+            20%     { clip-path: inset(60% 0 10% 0); transform: skewX(4deg) translateX(-4px); }
+            30%     { clip-path: none; transform: skewX(0); }
+            40%     { clip-path: inset(30% 0 50% 0); transform: skewX(-3deg); }
+            50%     { clip-path: none; transform: skewX(0); }
+        }
+        #text-content.glitch { animation: glitch 0.5s steps(1) both; }
+
+        /* Heartbeat */
+        @keyframes heartbeat {
+            0%,100% { transform: scale(1); }
+            14%     { transform: scale(1.2); }
+            28%     { transform: scale(1); }
+            42%     { transform: scale(1.15); }
+            70%     { transform: scale(1); }
+        }
+        #text-content.heartbeat { animation: heartbeat 0.6s ease both; }
+
+        /* ── Continuous overlay effects ── */
+
+        /* Vignette */
+        #brat-canvas::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            border-radius: inherit;
+            opacity: 0;
+            transition: opacity 0.4s;
+            background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.65) 100%);
+        }
+        #brat-canvas.vignette::after { opacity: 1; }
+
+        /* Scanlines */
+        #brat-canvas.scanlines::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                to bottom,
+                transparent 0px,
+                transparent 3px,
+                rgba(0,0,0,0.12) 3px,
+                rgba(0,0,0,0.12) 4px
+            );
+            z-index: 1;
+        }
+
+        /* Text glow — applied via JS as text-shadow */
+        /* Background breathing — applied via JS keyframe on canvas bg */
+        @keyframes bgBreathe {
+            0%,100% { filter: brightness(1) saturate(1); }
+            50%     { filter: brightness(1.12) saturate(1.3); }
+        }
+        #brat-canvas.breathe { animation: bgBreathe 3s ease-in-out infinite; }
+
+        /* Export button states */
+        #export-btn {
+            background: #ff3ea5;
+            color: #fff;
+        }
+
+        #export-btn.recording {
+            background: #e63946;
+            animation: pulse 1s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { opacity: 1; }
+            to   { opacity: 0.6; }
+        }
+
+        #record-canvas { display: none; }
+
+        /* ── Responsive ── */
+
+        /* Tablet: stack preview below controls */
+        @media (max-width: 860px) {
+            #player-section {
+                flex-direction: column;
+                align-items: center;
+                gap: 24px;
+            }
+
+            #preview-panel {
+                position: static;   /* remove sticky — content should scroll naturally */
+                width: 100%;
+                order: -1;          /* preview on top, controls below */
+            }
+
+            #audio-bar { max-width: 100%; }
+
+            #canvas-controls { max-width: 560px; }
+        }
+
+        /* Mobile */
+        @media (max-width: 600px) {
+            #app { gap: 16px; }
+
+            #drop-zone { padding: 28px 16px; }
+
+            button {
+                padding: 11px 16px;
+                font-size: 13px;
+                min-height: 44px;   /* comfortable touch target */
+            }
+
+            .ctrl-row { gap: 8px; }
+
+            .anim-pill, .ratio-pill, .opt-pill, .emotion-btn {
+                padding: 8px 11px;
+                font-size: 12px;
+                min-height: 36px;
+            }
+
+            .slider-row label {
+                width: 76px;
+                font-size: 12px;
+            }
+
+            .slider-val { font-size: 12px; width: 32px; }
+
+            select { font-size: 13px; padding: 9px 10px; }
+
+            #swatch-grid { gap: 10px; }
+
+            .preset-btn { width: 36px; height: 36px; } /* bigger touch target */
+
+            input[type=color] { width: 52px; height: 44px; }
+        }
+
+        /* Very small (≤ 380px) */
+        @media (max-width: 380px) {
+            .slider-row label { width: 64px; font-size: 11px; }
+
+            .anim-pill, .ratio-pill, .opt-pill, .emotion-btn {
+                padding: 7px 9px;
+                font-size: 11px;
+            }
+
+            button { padding: 10px 12px; font-size: 12px; }
+        }
+
+        /* error */
+        #error-msg {
+            display: none;
+            color: #ff5555;
+            font-size: 14px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <h1>Brat Lyric Video Generator</h1>
+
+    <!-- Upload -->
+    <div id="upload-section">
+        <div id="drop-zone">
+            <p>Drop a video or audio file here</p>
+            <span>mp4 · mp3 · wav · m4a · mov · webm · ogg · flac</span>
+            <br><br>
+            <button type="button" id="browse-btn">Browse file</button>
+            <input type="file" id="file-input" accept="video/*,audio/*">
+        </div>
+
+        <div class="row">
+            <label style="font-size:14px;color:#aaa;">Whisper model:</label>
+            <select id="model-select">
+                <option value="tiny">tiny (fastest)</option>
+                <option value="base" selected>base (recommended)</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large">large (best)</option>
+            </select>
+            <button id="upload-btn" disabled>Generate Lyrics</button>
+        </div>
+
+        <p id="file-name" style="font-size:13px;color:#aaa;"></p>
+        <p id="error-msg"></p>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-section">
+        <div class="spinner"></div>
+        <p id="loading-msg">Uploading and transcribing… this may take a minute.</p>
+    </div>
+
+    <!-- Player + Canvas -->
+    <div id="player-section">
+
+        <!-- Hidden video element for audio playback -->
+        <video id="media-player"></video>
+        <!-- Off-screen canvas used for video export -->
+        <canvas id="record-canvas"></canvas>
+
+        <!-- Left Side: Controls -->
+        <div id="canvas-controls">
+
+            <!-- Action buttons -->
+            <div class="ctrl-row">
+                <button id="blur-toggle">Blur: ON</button>
+                <button id="export-btn">Export Video</button>
+                <button id="download-btn">Save Image</button>
+                <button id="restart-btn">New File</button>
+            </div>
+
+            <!-- ── Colours ── -->
+            <span class="ctrl-label">Colour Presets</span>
+            <div id="swatch-grid">
+                <!-- Row 1: Charli originals -->
+                <button class="preset-btn active" data-bg="#ffffff" data-text="#000000" style="background:#ffffff" title="Brat Deluxe"></button>
+                <button class="preset-btn" data-bg="#8ace00" data-text="#000000" style="background:#8ace00" title="Brat"></button>
+                <button class="preset-btn" data-bg="#019bd9" data-text="#f70000" style="background:#019bd9" title="Crash"></button>
+                <!-- Row 2: Dark / mono -->
+                <button class="preset-btn" data-bg="#000000" data-text="#ffffff" style="background:#000000;border-color:#333" title="Jet Black"></button>
+                <button class="preset-btn" data-bg="#111111" data-text="#8ace00" style="background:#111111;border-color:#333" title="Night Brat"></button>
+                <button class="preset-btn" data-bg="#1a1a2e" data-text="#e0e0ff" style="background:#1a1a2e" title="Midnight"></button>
+                <!-- Row 3: Vibrant -->
+                <button class="preset-btn" data-bg="#ff3ea5" data-text="#ffffff" style="background:#ff3ea5" title="Hot Pink"></button>
+                <button class="preset-btn" data-bg="#e63946" data-text="#ffffff" style="background:#e63946" title="Red Hot"></button>
+                <button class="preset-btn" data-bg="#ff6b35" data-text="#fff3e0" style="background:#ff6b35" title="Sunset"></button>
+                <button class="preset-btn" data-bg="#ffd700" data-text="#1a1100" style="background:#ffd700" title="Gold"></button>
+                <!-- Row 4: Cool -->
+                <button class="preset-btn" data-bg="#c8b1e4" data-text="#1a0030" style="background:#c8b1e4" title="Lavender"></button>
+                <button class="preset-btn" data-bg="#a8e6cf" data-text="#1a3a2a" style="background:#a8e6cf" title="Mint"></button>
+                <button class="preset-btn" data-bg="#00b4d8" data-text="#03045e" style="background:#00b4d8" title="Teal"></button>
+                <button class="preset-btn" data-bg="#003f88" data-text="#ffffff" style="background:#003f88" title="Deep Blue"></button>
+            </div>
+
+            <!-- Custom colour pickers -->
+            <div id="custom-colors">
+                <div class="color-picker-wrap">
+                    <input type="color" id="bg-color-pick" value="#ffffff">
+                    <span>Background</span>
+                </div>
+                <div class="color-picker-wrap">
+                    <input type="color" id="text-color-pick" value="#000000">
+                    <span>Text</span>
+                </div>
+            </div>
+
+            <!-- ── Text style ── -->
+            <span class="ctrl-label">Text Style</span>
+
+            <div class="slider-row">
+                <label>Font size</label>
+                <input type="range" id="font-size-slider" min="14" max="80" value="32" step="1">
+                <span class="slider-val" id="font-size-val">32px</span>
+            </div>
+
+            <div class="slider-row">
+                <label>Line height</label>
+                <input type="range" id="line-height-slider" min="0.8" max="3" value="1.2" step="0.05">
+                <span class="slider-val" id="line-height-val">1.2</span>
+            </div>
+
+            <div class="slider-row">
+                <label>Letter spacing</label>
+                <input type="range" id="letter-spacing-slider" min="-2" max="10" value="0" step="0.5">
+                <span class="slider-val" id="letter-spacing-val">0px</span>
+            </div>
+
+            <div class="slider-row" id="blur-row">
+                <label>Blur amount</label>
+                <input type="range" id="blur-slider" min="0" max="6" value="1" step="0.1">
+                <span class="slider-val" id="blur-val">1px</span>
+            </div>
+
+            <!-- Font family -->
+            <div class="slider-row">
+                <label>Font</label>
+                <select id="font-select" style="flex:1;">
+                    <option value="'Arial Narrow','arialnarrow',Arial,sans-serif" selected>Arial Narrow</option>
+                    <option value="Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif">Impact</option>
+                    <option value="Georgia,'Times New Roman',serif">Georgia</option>
+                    <option value="'Courier New',Courier,monospace">Courier New</option>
+                    <option value="'Trebuchet MS',Helvetica,sans-serif">Trebuchet MS</option>
+                    <option value="'Comic Sans MS','Comic Sans',cursive">Comic Sans</option>
+                </select>
+            </div>
+
+            <!-- Text alignment -->
+            <div class="pill-row">
+                <button class="opt-pill" data-group="align" data-val="left">Left</button>
+                <button class="opt-pill active" data-group="align" data-val="center">Center</button>
+                <button class="opt-pill" data-group="align" data-val="right">Right</button>
+            </div>
+
+            <!-- Text transform -->
+            <div class="pill-row">
+                <button class="opt-pill active" data-group="transform" data-val="none">As typed</button>
+                <button class="opt-pill" data-group="transform" data-val="uppercase">UPPERCASE</button>
+                <button class="opt-pill" data-group="transform" data-val="lowercase">lowercase</button>
+            </div>
+
+            <!-- ── Layout ── -->
+            <span class="ctrl-label">Canvas</span>
+
+            <div id="ratio-picker" class="pill-row">
+                <button class="ratio-pill active" data-ratio="3/4">3:4</button>
+                <button class="ratio-pill" data-ratio="1/1">1:1</button>
+                <button class="ratio-pill" data-ratio="9/16">9:16</button>
+                <button class="ratio-pill" data-ratio="16/9">16:9</button>
+            </div>
+
+            <!-- ── Animation ── -->
+            <span class="ctrl-label">Animation</span>
+
+            <div id="anim-picker" class="pill-row">
+                <button class="anim-pill active" data-mode="typewriter">Typewriter</button>
+                <button class="anim-pill" data-mode="word">Word by Word</button>
+                <button class="anim-pill" data-mode="word-pop">Word Pop</button>
+                <button class="anim-pill" data-mode="fade">Fade In</button>
+                <button class="anim-pill" data-mode="instant">Instant</button>
+            </div>
+
+            <!-- ── Emotion ── -->
+            <span class="ctrl-label">Emotion Preset</span>
+
+            <div id="emotion-picker">
+                <button class="emotion-btn" data-emotion="none"     style="border-color:#555;color:#555;">None</button>
+                <button class="emotion-btn" data-emotion="hype"     style="background:#8ace0022;">🔥 Hype</button>
+                <button class="emotion-btn" data-emotion="sad"      style="background:#1a1a2e;">💔 Sad</button>
+                <button class="emotion-btn" data-emotion="rage"     style="background:#e6394622;">😤 Rage</button>
+                <button class="emotion-btn" data-emotion="romantic" style="background:#ff3ea522;">💕 Romantic</button>
+                <button class="emotion-btn" data-emotion="chill"    style="background:#c8b1e422;">😌 Chill</button>
+            </div>
+
+            <!-- Per-line trigger effect (independent of emotion preset) -->
+            <span class="ctrl-label">Line Trigger Effect</span>
+            <div class="pill-row" id="trigger-picker">
+                <button class="opt-pill active" data-group="trigger" data-val="none">None</button>
+                <button class="opt-pill" data-group="trigger" data-val="shake">Shake</button>
+                <button class="opt-pill" data-group="trigger" data-val="flash">Flash</button>
+                <button class="opt-pill" data-group="trigger" data-val="bounce">Bounce</button>
+                <button class="opt-pill" data-group="trigger" data-val="glitch">Glitch</button>
+                <button class="opt-pill" data-group="trigger" data-val="heartbeat">Heartbeat</button>
+            </div>
+
+            <!-- Continuous canvas effects -->
+            <span class="ctrl-label">Canvas FX</span>
+            <div class="pill-row">
+                <button class="opt-pill" id="fx-vignette"  data-group="fx" data-val="vignette">Vignette</button>
+                <button class="opt-pill" id="fx-scanlines" data-group="fx" data-val="scanlines">Scanlines</button>
+                <button class="opt-pill" id="fx-breathe"   data-group="fx" data-val="breathe">Breathe</button>
+                <button class="opt-pill" id="fx-glow"      data-group="fx" data-val="glow">Text Glow</button>
+            </div>
+
+        </div>
+
+        <!-- Right Side: Preview -->
+        <div id="preview-panel">
+            <!-- Visible audio controls -->
+            <div id="audio-bar">
+                <audio id="audio-controls" controls></audio>
+            </div>
+
+            <div id="brat-canvas">
+                <div id="text-content"></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────
+let lyricsData      = null;
+let selectedFile    = null;
+let objectURL       = null;
+let currentLineIdx  = -1;
+let animTimer       = null;
+let animMode        = 'typewriter';
+let blurOn          = true;
+let blurAmount      = 1;
+
+// ── DOM refs ───────────────────────────────────────────────
+const uploadSection      = document.getElementById('upload-section');
+const loadingSection     = document.getElementById('loading-section');
+const playerSection      = document.getElementById('player-section');
+const dropZone           = document.getElementById('drop-zone');
+const fileInput          = document.getElementById('file-input');
+const browseBtn          = document.getElementById('browse-btn');
+const uploadBtn          = document.getElementById('upload-btn');
+const fileNameLabel      = document.getElementById('file-name');
+const modelSelect        = document.getElementById('model-select');
+const loadingMsg         = document.getElementById('loading-msg');
+const errorMsg           = document.getElementById('error-msg');
+const mediaPlayer        = document.getElementById('media-player');
+const audioControls      = document.getElementById('audio-controls');
+const bratCanvas         = document.getElementById('brat-canvas');
+const textContent        = document.getElementById('text-content');
+const downloadBtn        = document.getElementById('download-btn');
+const restartBtn         = document.getElementById('restart-btn');
+const blurToggle         = document.getElementById('blur-toggle');
+const fontSizeSlider     = document.getElementById('font-size-slider');
+const fontSizeVal        = document.getElementById('font-size-val');
+const letterSpacingSlider= document.getElementById('letter-spacing-slider');
+const letterSpacingVal   = document.getElementById('letter-spacing-val');
+const blurSlider         = document.getElementById('blur-slider');
+const blurVal            = document.getElementById('blur-val');
+const blurRow            = document.getElementById('blur-row');
+
+// ── File selection ─────────────────────────────────────────
+browseBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+    selectedFile = file;
+    fileNameLabel.textContent = `Selected: ${file.name}`;
+    uploadBtn.disabled = false;
+    hideError();
+}
+
+// ── Upload & transcribe ────────────────────────────────────
+uploadBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    showLoading('Uploading and transcribing… this may take a minute.');
+
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+    formData.append('model', modelSelect.value);
+
+    try {
+        const response = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Server error');
+        lyricsData = data;
+        showPlayer();
+    } catch (err) {
+        showUpload();
+        showError(err.message);
+    }
+});
+
+// ── Player setup ───────────────────────────────────────────
+function showPlayer() {
+    loadingSection.style.display = 'none';
+    playerSection.style.display  = 'flex';
+
+    if (objectURL) URL.revokeObjectURL(objectURL);
+    objectURL = URL.createObjectURL(selectedFile);
+
+    // Feed the same URL to both the hidden video (for timeupdate) and audio controls
+    mediaPlayer.src    = objectURL;
+    audioControls.src  = objectURL;
+
+    textContent.textContent = '';
+    currentLineIdx = -1;
+}
+
+// Keep hidden video and audio controls in sync (audio drives, video follows)
+audioControls.addEventListener('play',   () => { mediaPlayer.currentTime = audioControls.currentTime; mediaPlayer.play(); });
+audioControls.addEventListener('pause',  () => mediaPlayer.pause());
+audioControls.addEventListener('seeked', () => { mediaPlayer.currentTime = audioControls.currentTime; });
+
+// ── Lyric sync + typewriter ────────────────────────────────
+mediaPlayer.addEventListener('timeupdate', () => {
+    if (!lyricsData) return;
+    const t   = mediaPlayer.currentTime;
+    const idx = lyricsData.lines.findIndex(l => t >= l.start && t <= l.end);
+
+    if (idx === -1) {
+        if (currentLineIdx !== -1) {
+            currentLineIdx = -1;
+            clearCanvas();
+        }
+        return;
+    }
+
+    if (idx === currentLineIdx) return; // Already animating this line
+
+    currentLineIdx = idx;
+    const line = lyricsData.lines[idx];
+    const remaining = line.end - t;
+    animateLine(line.text, remaining);
+});
+
+function cancelAnim() {
+    if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+}
+
+function clearCanvas() {
+    cancelAnim();
+    textContent.classList.remove('fade-in');
+    textContent.innerHTML = '';
+}
+
+function animateLine(text, durationSec) {
+    clearCanvas();
+    fireTrigger();
+
+    switch (animMode) {
+
+        case 'instant': {
+            textContent.textContent = text;
+            break;
+        }
+
+        case 'fade': {
+            textContent.textContent = text;
+            // Re-trigger animation by removing then re-adding class
+            void textContent.offsetWidth;
+            textContent.classList.add('fade-in');
+            break;
+        }
+
+        case 'typewriter': {
+            const chars = [...text];
+            const delay = Math.min(70, Math.max(10, (durationSec * 1000) / chars.length));
+            let i = 0;
+            function typeChar() {
+                if (i < chars.length) {
+                    textContent.textContent += chars[i++];
+                    animTimer = setTimeout(typeChar, delay);
+                }
+            }
+            typeChar();
+            break;
+        }
+
+        case 'word': {
+            const words = text.split(' ');
+            const delay = Math.min(400, Math.max(80, (durationSec * 1000) / words.length));
+            let i = 0;
+            function typeWord() {
+                if (i < words.length) {
+                    textContent.textContent = (i === 0 ? '' : textContent.textContent + ' ') + words[i++];
+                    animTimer = setTimeout(typeWord, delay);
+                }
+            }
+            typeWord();
+            break;
+        }
+
+        case 'word-pop': {
+            const words = text.split(' ');
+            const delay = Math.min(350, Math.max(60, (durationSec * 1000) / words.length));
+            // Build all spans upfront (invisible), then reveal one by one
+            textContent.innerHTML = words
+                .map(w => `<span class="word">${w}</span>`)
+                .join(' ');
+            const spans = textContent.querySelectorAll('.word');
+            let i = 0;
+            function popWord() {
+                if (i < spans.length) {
+                    spans[i++].classList.add('show');
+                    animTimer = setTimeout(popWord, delay);
+                }
+            }
+            popWord();
+            break;
+        }
+    }
+}
+
+// ── Animation mode picker ──────────────────────────────────
+document.querySelectorAll('.anim-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        document.querySelectorAll('.anim-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        animMode = pill.dataset.mode;
+    });
+});
+
+// ── Aspect ratio picker ─────────────────────────────────────
+document.querySelectorAll('.ratio-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        document.querySelectorAll('.ratio-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        bratCanvas.style.aspectRatio = pill.dataset.ratio;
+    });
+});
+
+// ── Colour presets ─────────────────────────────────────────
+document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const bg   = btn.dataset.bg;
+        const text = btn.dataset.text;
+        bratCanvas.style.backgroundColor = bg;
+        textContent.style.color = text;
+        // Sync pickers
+        document.getElementById('bg-color-pick').value   = bg.length === 7 ? bg : '#ffffff';
+        document.getElementById('text-color-pick').value = text.length === 7 ? text : '#000000';
+    });
+});
+
+// ── Custom colour pickers ──────────────────────────────────
+document.getElementById('bg-color-pick').addEventListener('input', e => {
+    bratCanvas.style.backgroundColor = e.target.value;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+});
+
+document.getElementById('text-color-pick').addEventListener('input', e => {
+    textContent.style.color = e.target.value;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+});
+
+// ── Font family ────────────────────────────────────────────
+document.getElementById('font-select').addEventListener('change', e => {
+    textContent.style.fontFamily = e.target.value;
+});
+
+// ── Text alignment pills ───────────────────────────────────
+document.querySelectorAll('.opt-pill[data-group="align"]').forEach(pill => {
+    pill.addEventListener('click', () => {
+        document.querySelectorAll('.opt-pill[data-group="align"]').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        textContent.style.textAlign = pill.dataset.val;
+    });
+});
+
+// ── Text transform pills ───────────────────────────────────
+document.querySelectorAll('.opt-pill[data-group="transform"]').forEach(pill => {
+    pill.addEventListener('click', () => {
+        document.querySelectorAll('.opt-pill[data-group="transform"]').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        textContent.style.textTransform = pill.dataset.val;
+    });
+});
+
+// ── Line height slider ─────────────────────────────────────
+document.getElementById('line-height-slider').addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    textContent.style.lineHeight = v;
+    document.getElementById('line-height-val').textContent = v.toFixed(2);
+});
+
+// ── Blur toggle ────────────────────────────────────────────
+blurToggle.addEventListener('click', () => {
+    blurOn = !blurOn;
+    blurToggle.textContent = blurOn ? 'Blur: ON' : 'Blur: OFF';
+    blurToggle.classList.toggle('off', !blurOn);
+    blurRow.style.display = blurOn ? 'flex' : 'none';
+    applyFilter();
+});
+
+blurSlider.addEventListener('input', () => {
+    blurAmount = parseFloat(blurSlider.value);
+    blurVal.textContent = blurAmount + 'px';
+    applyFilter();
+});
+
+function applyFilter() {
+    textContent.style.filter = blurOn
+        ? `blur(${blurAmount}px) contrast(1.25)`
+        : 'none';
+}
+
+// ── Font size slider ───────────────────────────────────────
+fontSizeSlider.addEventListener('input', () => {
+    const size = fontSizeSlider.value;
+    textContent.style.fontSize = size + 'px';
+    fontSizeVal.textContent = size + 'px';
+});
+
+// ── Letter spacing slider ──────────────────────────────────
+letterSpacingSlider.addEventListener('input', () => {
+    const ls = parseFloat(letterSpacingSlider.value);
+    textContent.style.letterSpacing = ls + 'px';
+    letterSpacingVal.textContent = ls + 'px';
+});
+
+// ── Download current frame ─────────────────────────────────
+downloadBtn.addEventListener('click', () => {
+    htmlToImage.toPng(bratCanvas)
+        .then(dataUrl => {
+            const link = document.createElement('a');
+            const slug = (textContent.textContent.trim() || 'brat').replace(/\s+/g, '-').slice(0, 40);
+            link.download = `brat-${slug}.png`;
+            link.href = dataUrl;
+            link.click();
+        })
+        .catch(err => console.error('Download failed:', err));
+});
+
+// ── Restart ────────────────────────────────────────────────
+restartBtn.addEventListener('click', () => {
+    lyricsData = null; selectedFile = null; currentLineIdx = -1;
+    clearCanvas();
+    if (objectURL) { URL.revokeObjectURL(objectURL); objectURL = null; }
+    mediaPlayer.src = ''; audioControls.src = '';
+    textContent.textContent = '';
+    fileInput.value = ''; fileNameLabel.textContent = '';
+    uploadBtn.disabled = true;
+    showUpload();
+});
+
+// ── UI helpers ─────────────────────────────────────────────
+function showLoading(msg) {
+    uploadSection.style.display  = 'none';
+    loadingSection.style.display = 'flex';
+    playerSection.style.display  = 'none';
+    loadingMsg.textContent = msg;
+}
+
+function showUpload() {
+    uploadSection.style.display  = 'flex';
+    loadingSection.style.display = 'none';
+    playerSection.style.display  = 'none';
+}
+
+function showError(msg)  { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
+function hideError()     { errorMsg.style.display = 'none'; }
+
+// ── Emotion presets ────────────────────────────────────────
+const EMOTIONS = {
+    none:     null,
+    hype:     { bg: '#8ace00', text: '#000000', anim: 'word-pop',   trigger: 'flash',     fx: [],                  blur: true,  blurAmt: 0.5 },
+    sad:      { bg: '#1a1a2e', text: '#e0e0ff', anim: 'fade',       trigger: 'none',      fx: ['vignette'],        blur: true,  blurAmt: 2   },
+    rage:     { bg: '#1a0000', text: '#ff3333', anim: 'typewriter', trigger: 'shake',     fx: ['scanlines'],       blur: true,  blurAmt: 1.5 },
+    romantic: { bg: '#2d0018', text: '#ffb3d1', anim: 'typewriter', trigger: 'heartbeat', fx: ['vignette','glow'], blur: true,  blurAmt: 1   },
+    chill:    { bg: '#c8b1e4', text: '#1a0030', anim: 'word',       trigger: 'none',      fx: ['breathe'],         blur: false, blurAmt: 0   },
+};
+
+let lineTrigger = 'none';
+let activeFx    = new Set();
+
+document.querySelectorAll('.emotion-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.emotion-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyEmotionPreset(btn.dataset.emotion);
+    });
+});
+
+function applyEmotionPreset(key) {
+    const e = EMOTIONS[key];
+    if (!e) {
+        // "None" — just clear active effects, keep current settings
+        lineTrigger = 'none';
+        activeFx.clear();
+        syncFxButtons();
+        syncTriggerButton('none');
+        bratCanvas.classList.remove('vignette','scanlines','breathe');
+        textContent.style.textShadow = '';
+        return;
+    }
+
+    // Colours
+    bratCanvas.style.backgroundColor = e.bg;
+    textContent.style.color = e.text;
+    document.getElementById('bg-color-pick').value   = e.bg.length === 7 ? e.bg : '#111111';
+    document.getElementById('text-color-pick').value = e.text.length === 7 ? e.text : '#ffffff';
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+
+    // Animation mode
+    animMode = e.anim;
+    document.querySelectorAll('.anim-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.mode === e.anim);
+    });
+
+    // Blur
+    blurOn = e.blur;
+    blurAmount = e.blurAmt;
+    blurSlider.value = e.blurAmt;
+    blurVal.textContent = e.blurAmt + 'px';
+    blurToggle.textContent = blurOn ? 'Blur: ON' : 'Blur: OFF';
+    blurToggle.classList.toggle('off', !blurOn);
+    blurRow.style.display = blurOn ? 'flex' : 'none';
+    applyFilter();
+
+    // Trigger
+    lineTrigger = e.trigger;
+    syncTriggerButton(e.trigger);
+
+    // Canvas FX
+    activeFx = new Set(e.fx);
+    syncFxButtons();
+    bratCanvas.classList.toggle('vignette',  activeFx.has('vignette'));
+    bratCanvas.classList.toggle('scanlines', activeFx.has('scanlines'));
+    bratCanvas.classList.toggle('breathe',   activeFx.has('breathe'));
+    applyGlow();
+}
+
+function syncTriggerButton(val) {
+    document.querySelectorAll('.opt-pill[data-group="trigger"]').forEach(p => {
+        p.classList.toggle('active', p.dataset.val === val);
+    });
+}
+
+function syncFxButtons() {
+    document.querySelectorAll('.opt-pill[data-group="fx"]').forEach(b => {
+        b.classList.toggle('active', activeFx.has(b.dataset.val));
+    });
+}
+
+function applyGlow() {
+    textContent.style.textShadow = activeFx.has('glow')
+        ? '0 0 12px currentColor, 0 0 30px currentColor'
+        : '';
+}
+
+// ── Line trigger effect picker ──────────────────────────────
+document.querySelectorAll('.opt-pill[data-group="trigger"]').forEach(pill => {
+    pill.addEventListener('click', () => {
+        document.querySelectorAll('.opt-pill[data-group="trigger"]').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        lineTrigger = pill.dataset.val;
+    });
+});
+
+// ── Canvas FX toggles ───────────────────────────────────────
+document.querySelectorAll('.opt-pill[data-group="fx"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const val = btn.dataset.val;
+        btn.classList.toggle('active');
+        if (activeFx.has(val)) activeFx.delete(val); else activeFx.add(val);
+        bratCanvas.classList.toggle('vignette',  activeFx.has('vignette'));
+        bratCanvas.classList.toggle('scanlines', activeFx.has('scanlines'));
+        bratCanvas.classList.toggle('breathe',   activeFx.has('breathe'));
+        applyGlow();
+    });
+});
+
+// ── Fire per-line trigger ───────────────────────────────────
+function fireTrigger() {
+    if (lineTrigger === 'none') return;
+
+    // Canvas-level effects
+    if (lineTrigger === 'shake' || lineTrigger === 'flash') {
+        bratCanvas.classList.remove(lineTrigger);
+        void bratCanvas.offsetWidth; // reflow to restart
+        bratCanvas.classList.add(lineTrigger);
+        bratCanvas.addEventListener('animationend', () => bratCanvas.classList.remove(lineTrigger), { once: true });
+    }
+
+    // Text-level effects
+    if (lineTrigger === 'bounce' || lineTrigger === 'glitch' || lineTrigger === 'heartbeat') {
+        textContent.classList.remove(lineTrigger);
+        void textContent.offsetWidth;
+        textContent.classList.add(lineTrigger);
+        textContent.addEventListener('animationend', () => textContent.classList.remove(lineTrigger), { once: true });
+    }
+}
+
+// ── Video export ────────────────────────────────────────────
+const recordCanvas = document.getElementById('record-canvas');
+const rctx         = recordCanvas.getContext('2d');
+const exportBtn    = document.getElementById('export-btn');
+const PREVIEW_W    = 400; // must match #brat-canvas CSS width
+
+let isRecording     = false;
+let mediaRecorder   = null;
+let recordedChunks  = [];
+let rafId           = null;
+
+// Read the currently visible text from the HTML element (works for all anim modes)
+function getVisibleText() {
+    if (animMode === 'word-pop') {
+        return [...textContent.querySelectorAll('.word.show')]
+            .map(s => s.textContent).join(' ');
+    }
+    return textContent.textContent;
+}
+
+// Map current ratio pill → pixel dimensions (short side = 1080)
+function getCanvasDimensions() {
+    const ratioStr = document.querySelector('.ratio-pill.active')?.dataset.ratio || '3/4';
+    const [w, h] = ratioStr.split('/').map(Number);
+    if (w > h) return { width: Math.round(1080 * w / h), height: 1080 };
+    return { width: 1080, height: Math.round(1080 * h / w) };
+}
+
+// Wrap text into lines that fit maxWidth on the given context
+function wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const word of words) {
+        const test = cur ? cur + ' ' + word : word;
+        if (ctx.measureText(test).width > maxWidth && cur) {
+            lines.push(cur);
+            cur = word;
+        } else {
+            cur = test;
+        }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+}
+
+// Render the current lyric state onto recordCanvas
+function drawFrame() {
+    const cw = recordCanvas.width;
+    const ch = recordCanvas.height;
+    const scale = cw / PREVIEW_W;
+
+    // Background
+    const bgColor = bratCanvas.style.backgroundColor || '#ffffff';
+    rctx.fillStyle = bgColor;
+    rctx.fillRect(0, 0, cw, ch);
+
+    const rawText = getVisibleText();
+    if (!rawText) return;
+
+    // Apply text-transform
+    const transform = textContent.style.textTransform || 'none';
+    const text = transform === 'uppercase' ? rawText.toUpperCase()
+               : transform === 'lowercase' ? rawText.toLowerCase()
+               : rawText;
+
+    const fontSize     = parseInt(fontSizeSlider.value) * scale;
+    const lineHeightMul= parseFloat(document.getElementById('line-height-slider').value);
+    const lineH        = fontSize * lineHeightMul;
+    const letterSp     = parseFloat(letterSpacingSlider.value) * scale;
+    const padding      = 24 * scale;
+    const maxWidth     = cw - padding * 2;
+
+    // Font family — strip CSS fallbacks to just the first name for canvas
+    const fontFamilyRaw = document.getElementById('font-select').value;
+    const fontFamily    = fontFamilyRaw.split(',')[0].replace(/['"]/g, '').trim();
+
+    rctx.font        = `bold ${fontSize}px "${fontFamily}"`;
+    rctx.fillStyle   = textContent.style.color || '#000000';
+    rctx.textBaseline = 'alphabetic';
+
+    // Letter spacing (Chrome/Edge only; silently ignored elsewhere)
+    try { rctx.letterSpacing = letterSp + 'px'; } catch (_) {}
+
+    // Blur filter
+    rctx.filter = blurOn ? `blur(${blurAmount * scale}px) contrast(1.25)` : 'none';
+
+    // Text alignment
+    const align = textContent.style.textAlign || 'center';
+    rctx.textAlign = align;
+    const x = align === 'left' ? padding
+             : align === 'right' ? cw - padding
+             : cw / 2;
+
+    const lines  = wrapText(rctx, text, maxWidth);
+    const totalH = lines.length * lineH;
+    // vertically centre: start y at top of first line baseline
+    let y = (ch - totalH) / 2 + fontSize * 0.85;
+
+    for (const line of lines) {
+        rctx.fillText(line, x, y);
+        y += lineH;
+    }
+
+    rctx.filter = 'none';
+}
+
+// ── Start / stop ────────────────────────────────────────────
+exportBtn.addEventListener('click', () => {
+    if (isRecording) stopRecording();
+    else startRecording();
+});
+
+// Auto-stop when the audio track finishes
+audioControls.addEventListener('ended', () => {
+    if (isRecording) stopRecording();
+});
+
+function startRecording() {
+    if (!lyricsData) return;
+
+    // Size the off-screen canvas
+    const { width, height } = getCanvasDimensions();
+    recordCanvas.width  = width;
+    recordCanvas.height = height;
+
+    // Canvas video stream at 30 fps
+    const canvasStream = recordCanvas.captureStream(30);
+
+    // Audio stream from the <audio> element
+    let audioTrack = null;
+    try {
+        const aStream = audioControls.captureStream();
+        audioTrack = aStream.getAudioTracks()[0] ?? null;
+    } catch (_) { /* captureStream not available (Firefox requires user gesture or flag) */ }
+
+    const tracks = [...canvasStream.getVideoTracks()];
+    if (audioTrack) tracks.push(audioTrack);
+    const combined = new MediaStream(tracks);
+
+    // Pick best supported codec
+    const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        .find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+
+    mediaRecorder   = new MediaRecorder(combined, { mimeType });
+    recordedChunks  = [];
+
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = 'lyric-video.webm';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+        isRecording = false;
+        exportBtn.textContent = 'Export Video';
+        exportBtn.classList.remove('recording');
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    };
+
+    // Rewind to start
+    audioControls.currentTime = 0;
+    mediaPlayer.currentTime   = 0;
+    currentLineIdx = -1;
+    clearCanvas();
+
+    mediaRecorder.start(100); // collect data every 100 ms
+    isRecording = true;
+    exportBtn.textContent = '⏹ Stop & Save';
+    exportBtn.classList.add('recording');
+
+    audioControls.play();
+
+    // RAF loop — draws each frame to recordCanvas
+    function loop() {
+        drawFrame();
+        if (isRecording) rafId = requestAnimationFrame(loop);
+    }
+    loop();
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.requestData(); // flush remaining data
+        mediaRecorder.stop();
+    }
+    audioControls.pause();
+}
+</script>
+</body>
+</html>
