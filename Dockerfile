@@ -18,4 +18,4 @@ COPY . .
 ENV FLASK_APP=app.py
 
 # Run with Gunicorn on Render's automatic port binding
-CMD ["gunicorn", "--workers", "1", "--timeout", "600", "-b", "0.0.0.0:10000", "app:app"]
+CMD ["gunicorn", "--workers", "1", "--timeout", "600", "-b", "0.0.0.0:7860", "app:app"]
