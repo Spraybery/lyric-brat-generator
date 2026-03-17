@@ -1,7 +1,7 @@
 FROM python:3.9-slim
 
 # Install system dependencies (ffmpeg is required for Whisper)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,4 +18,4 @@ COPY . .
 ENV FLASK_APP=app.py
 
 # Run with Gunicorn on Render's automatic port binding
-CMD ["gunicorn", "-b", "0.0.0.0:10000", "app:app"]
+CMD ["gunicorn", "--workers", "1", "--timeout", "600", "-b", "0.0.0.0:10000", "app:app"]
