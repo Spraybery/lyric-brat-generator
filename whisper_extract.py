@@ -1,9 +1,10 @@
 import os
 import sys
 
-# Add FFmpeg to PATH for Whisper
+# Add FFmpeg to PATH for Whisper (Windows fallback)
 ffmpeg_path = r"C:\Users\delan\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin"
-os.environ["PATH"] = ffmpeg_path + os.pathsep + os.environ.get("PATH", "")
+if os.path.exists(ffmpeg_path):
+    os.environ["PATH"] = ffmpeg_path + os.pathsep + os.environ.get("PATH", "")
 
 import whisper
 import json
